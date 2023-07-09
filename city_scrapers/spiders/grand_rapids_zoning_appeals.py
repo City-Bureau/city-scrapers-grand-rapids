@@ -19,27 +19,27 @@ class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
         """
         for item in response.css(".MeetingRow"):
             if response.css(".RowTop .RowRight span::text").get() is not None:
-                if (
+                """if (
                     "Aging of West Michigan"
                     in item.css(".RowBottom div:nth-child(2)::text").get()
-                ):
-                    meeting = Meeting(
-                        title=self._parse_title(item),
-                        description=self._parse_description(item),
-                        classification=self._parse_classification(item),
-                        start=self._parse_start(item),
-                        end=self._parse_end(item),
-                        all_day=self._parse_all_day(item),
-                        time_notes=self._parse_time_notes(item),
-                        location=self._parse_location(item),
-                        links=self._parse_links(item),
-                        source=self._parse_source(response),
-                    )
+                ):"""
+                meeting = Meeting(
+                    title=self._parse_title(item),
+                    description=self._parse_description(item),
+                    classification=self._parse_classification(item),
+                    start=self._parse_start(item),
+                    end=self._parse_end(item),
+                    all_day=self._parse_all_day(item),
+                    time_notes=self._parse_time_notes(item),
+                    location=self._parse_location(item),
+                    links=self._parse_links(item),
+                    source=self._parse_source(response),
+                )
 
-                    meeting["status"] = self._get_status(meeting)
-                    meeting["id"] = self._get_id(meeting)
+                meeting["status"] = self._get_status(meeting)
+                meeting["id"] = self._get_id(meeting)
 
-                    yield meeting
+                yield meeting
 
     def _parse_title(self, item):
         """Parse or generate meeting title."""
@@ -56,10 +56,8 @@ class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
 
     def _parse_start(self, item):
         """Parse start datetime as a naive datetime object."""
-        try:
-            start_time = item.css(".RowTop .RowLink a::text").get()
-        except:
-            start_time = item.css(".RowTop .RowLink a::text").get() + " 12:00PM"
+        start_time = item.css(".RowTop .RowLink a::text").get()
+
         return parser().parse(start_time)
 
     def _parse_end(self, item):
@@ -77,6 +75,7 @@ class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
     def _parse_location(self, item):
         """Parse or generate location."""
         address_raw = item.css(".RowTop .RowLink a::attr(title)").get()
+
         try:
             address = (
                 address_raw.split("Scheduled")[1]
@@ -84,8 +83,9 @@ class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
                 .replace("\t", " ")
                 .strip()
             )
-        except:
+        except IndexError:
             address = address_raw
+
         return {
             "address": address,
             "name": "",
