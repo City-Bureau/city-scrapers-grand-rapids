@@ -141,6 +141,7 @@ class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
             {"href": Summary, "title": "Summary"},
             {"href": Minutes, "title": "Minutes"},
         ]
+
     def _parse_source(self, response):
         """Parse or generate source."""
         return response.url
