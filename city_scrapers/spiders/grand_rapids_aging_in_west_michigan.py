@@ -4,9 +4,9 @@ from city_scrapers_core.spiders import CityScrapersSpider
 from dateutil.parser import parser
 
 
-class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
+class GrandRapidsAgingInWestMichiganSpider(CityScrapersSpider):
     name = "grand_rapids_zoning_appeals"
-    agency = "Grand Rapids Board of Zoning Appeals"
+    agency = "Grand Rapids Agency On Aging In West Michigan"
     timezone = "America/Chicago"
     start_urls = ["http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx?View=List"]
 
