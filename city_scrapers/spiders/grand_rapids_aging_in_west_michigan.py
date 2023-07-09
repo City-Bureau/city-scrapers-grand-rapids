@@ -5,8 +5,8 @@ from dateutil.parser import parser
 
 
 class GrandRapidsAgingInWestMichiganSpider(CityScrapersSpider):
-    name = "grand_rapids_zoning_appeals"
-    agency = "Grand Rapids Agency On Aging In West Michigan"
+    name = "grand_rapids_aging_in_west_michigan"
+    agency = "Grand Rapids Agency On Aging Of West Michigan"
     timezone = "America/Chicago"
     start_urls = ["http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx?View=List"]
 
