@@ -1,7 +1,8 @@
 # from datetime import datetime
 from os.path import dirname, join
 
-# import pytest
+import pytest
+
 # from city_scrapers_core.constants import BOARD
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
@@ -82,6 +83,6 @@ def test_tests():
 #    assert parsed_items[0]["classification"] == BOARD
 
 
-# @pytest.mark.parametrize("item", parsed_items)
-# def test_all_day(item):
-#    assert item["all_day"] is False
+@pytest.mark.parametrize("item", parsed_items)
+def test_all_day(item):
+    assert item["all_day"] is False
