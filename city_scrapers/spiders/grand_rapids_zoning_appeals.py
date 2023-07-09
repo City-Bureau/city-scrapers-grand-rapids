@@ -18,9 +18,9 @@ class GrandRapidsZoningAppealsSpider(CityScrapersSpider):
         needs.
         """
         for item in response.css(".MeetingRow"):
-            if response.css(".RowTop .RowRight span::text").get() is not None:
+            if item.css(".RowTop .RowRight span::text").get() != "Cancelled":
                 if (
-                    "Aging of West Michigan"
+                    "Board of Zoning Appeals"
                     in item.css(".RowBottom div:nth-child(2)::text").get()
                 ):
                     meeting = Meeting(
