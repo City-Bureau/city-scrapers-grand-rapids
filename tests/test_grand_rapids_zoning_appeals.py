@@ -1,12 +1,14 @@
-from datetime import datetime
+# from datetime import datetime
 from os.path import dirname, join
 
-import pytest
-from city_scrapers_core.constants import NOT_CLASSIFIED
+# import pytest
+# from city_scrapers_core.constants import BOARD
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.grand_rapids_zoning_appeals import GrandRapidsZoningAppealsSpider
+from city_scrapers.spiders.grand_rapids_zoning_appeals import (
+    GrandRapidsZoningAppealsSpider,
+)
 
 test_response = file_response(
     join(dirname(__file__), "files", "grand_rapids_zoning_appeals.html"),
@@ -20,9 +22,6 @@ freezer.start()
 parsed_items = [item for item in spider.parse(test_response)]
 
 freezer.stop()
-
-
-
 
 
 """
@@ -80,9 +79,9 @@ def test_tests():
 
 
 # def test_classification():
-#     assert parsed_items[0]["classification"] == NOT_CLASSIFIED
+#    assert parsed_items[0]["classification"] == BOARD
 
 
 # @pytest.mark.parametrize("item", parsed_items)
 # def test_all_day(item):
-#     assert item["all_day"] is False
+#    assert item["all_day"] is False
