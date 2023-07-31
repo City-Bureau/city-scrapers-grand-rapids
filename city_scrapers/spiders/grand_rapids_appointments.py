@@ -5,7 +5,7 @@ from dateutil.parser import parser
 
 
 class GrandRapidsAppointmentsSpider(CityScrapersSpider):
-    name = "gra_appointments"
+    name = "grand_rapids_appointments"
     agency = "Grand Rapids Committee On Appointments"
     timezone = "America/Chicago"
     start_urls = ["http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx"]
