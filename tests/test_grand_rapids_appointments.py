@@ -6,7 +6,7 @@ from city_scrapers_core.constants import COMMITTEE
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.grand_rapids_appointments import (
+from city_scrapers.spiders.gra_appointments import (
     GrandRapidsAppointmentsSpider,
 )
 
