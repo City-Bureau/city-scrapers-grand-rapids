@@ -6,7 +6,7 @@ from city_scrapers_core.constants import COMMITTEE
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.gra_appointments import (
+from city_scrapers.spiders.grand_rapids_appointments import (
     GrandRapidsAppointmentsSpider,
 )
 
@@ -55,7 +55,7 @@ def test_time_notes():
 def test_id():
     assert (
         parsed_items[0]["id"]
-        == "gra_appointments/202301100800/x/committee_on_appointments"
+        == "grand_rapids_appointments/202301100800/x/committee_on_appointments"
     )
 
 
