@@ -7,7 +7,7 @@ from dateutil.parser import parser
 class GraZoningAppealsSpider(CityScrapersSpider):
     name = "gra_zoning_appeals"
     agency = "Grand Rapids Zoning Appeals"
-    timezone = "America/Chicago"
+    timezone = "America/Detroit"
     start_urls = ["http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx?View=List"]
 
     def parse(self, response):
