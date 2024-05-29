@@ -1,7 +1,7 @@
-from city_scrapers_core.constants import NOT_CLASSIFIED
-from city_scrapers_core.items import Meeting
-from city_scrapers.mixins.boarddocs import BoardDocsMixin
 import re
+
+from city_scrapers.mixins.boarddocs import BoardDocsMixin
+
 
 class GraPublicSchoolBoardSpider(BoardDocsMixin):
     name = "gra_public_school_board"
@@ -16,19 +16,23 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         In this case, the location tends to be the first 4 lines
         are time information in the format "9:30 a.m."
         """
-        location_node = response.css('div.meeting-description')
-        
+        location_node = response.css("div.meeting-description")
+
         if not location_node:
             return {"name": "TBD", "address": ""}
-        
+
         # Extract and clean the HTML content
         location_text = location_node.get()
-        location_text = re.sub(r'<br\s*/?>', '\n', location_text)  # Replace <br> with newlines
-        location_text = re.sub(r'<.*?>', '', location_text)  # Remove any other HTML tags
-        location_lines = location_text.split('\n')
-        
+        location_text = re.sub(
+            r"<br\s*/?>", "\n", location_text
+        )  # Replace <br> with newlines
+        location_text = re.sub(
+            r"<.*?>", "", location_text
+        )  # Remove any other HTML tags
+        location_lines = location_text.split("\n")
+
         # Regex to match time pattern (e.g., "9:30 a.m.")
-        time_pattern = re.compile(r'\d{1,2}:\d{2}\s*(a\.m\.|p\.m\.)', re.IGNORECASE)
+        time_pattern = re.compile(r"\d{1,2}:\d{2}\s*(a\.m\.|p\.m\.)", re.IGNORECASE)
         address_lines = []
 
         for i, line in enumerate(location_lines):
@@ -37,11 +41,11 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 start_index = max(0, i - 4)
                 address_lines = location_lines[start_index:i]
                 break
-        
+
         if not address_lines:
             return {"name": "TBD", "address": ""}
-        
+
         # Combine address parts into a single string
         address = ", ".join([line.strip() for line in address_lines if line.strip()])
-        
+
         return {"name": "", "address": address}
