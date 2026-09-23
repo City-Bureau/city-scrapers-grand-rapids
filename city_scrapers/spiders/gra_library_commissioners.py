@@ -1,5 +1,4 @@
 import re
-from collections import Counter
 
 from city_scrapers_core.constants import BOARD
 from city_scrapers_core.items import Meeting
@@ -9,7 +8,7 @@ from dateutil.parser import parse as dateutil_parser
 
 class GraLibraryCommissionersSpider(CityScrapersSpider):
     name = "gra_library_commissioners"
-    agency = "Grand Rapids Public Library"
+    agency = "GRPL Board of Library Commissioners"
     timezone = "America/Detroit"
     start_urls = ["https://www.grpl.org/about/board-of-library-commissioners/"]
     location = {
@@ -17,9 +16,11 @@ class GraLibraryCommissionersSpider(CityScrapersSpider):
         "address": "111 Library St NE, Grand Rapids, MI 49503",
     }
 
+    TITLE = "Board of Library Commissioners"
+
     # Dates flagged with an asterisk don't follow the regular start time described
     # under "Board Meetings", so the attachment has to be checked instead.
-    ASTERISK_NOTE = "Please check the meeting attachment for start time details"
+    ASTERISK_NOTE = "Please check the meeting attachment for start time details."
 
     # The regular start time is stated once in prose rather than per meeting, so
     # `parse` reads it off the response before walking the listing.
@@ -36,7 +37,7 @@ class GraLibraryCommissionersSpider(CityScrapersSpider):
         """
         self.regular_time, self.regular_time_notes = self._parse_meeting_time(response)
 
-        parsed = []
+        found = False
         for item in response.xpath(
             '//h3[contains(text(),"Meeting Minutes and Packets")]'
             '/ancestor::div[contains(@class,"fl-module-rich-text")][1]'
@@ -46,9 +47,15 @@ class GraLibraryCommissionersSpider(CityScrapersSpider):
             if start is None:
                 # Not every paragraph in the accordion is a meeting listing
                 continue
+            found = True
+
+            item_text = self._parse_item_text(item)
+            # The listing marks meetings that depart from the regular schedule
+            # with an asterisk, so carry that marker through to the title.
+            title = f"{self.TITLE}*" if "*" in item_text else self.TITLE
 
             meeting = Meeting(
-                title="Board of Library Commissioners",
+                title=title,
                 description="",
                 classification=BOARD,
                 start=start,
@@ -60,30 +67,17 @@ class GraLibraryCommissionersSpider(CityScrapersSpider):
                 source=response.url,
             )
 
-            item_text = self._parse_item_text(item)
             meeting["status"] = self._get_status(meeting, text=item_text)
-            parsed.append((meeting, item_text))
+            meeting["id"] = self._get_id(meeting)
 
-        if not parsed:
+            yield meeting
+
+        if not found:
             self.logger.warning(
                 "No meetings found under 'Meeting Minutes and Packets' at %s. "
                 "The listing markup has most likely changed.",
                 response.url,
             )
-
-        # Four dates list a regular and a special meeting as separate rows. Both
-        # rows share a date, and the regular start time is applied to each, so
-        # they would otherwise collapse onto a single ID. Only the starred row of
-        # such a pair is the special meeting -- an asterisk on a date with no
-        # twin just marks a meeting held off the usual last-Tuesday schedule.
-        date_counts = Counter(meeting["start"] for meeting, _ in parsed)
-        for meeting, item_text in parsed:
-            identifier = None
-            if date_counts[meeting["start"]] > 1 and "*" in item_text:
-                identifier = "special"
-            meeting["id"] = self._get_id(meeting, identifier)
-
-            yield meeting
 
     def _parse_meeting_time(self, response):
         """Pull the regular start time, and the sentence it came from, out of the
@@ -123,14 +117,15 @@ class GraLibraryCommissionersSpider(CityScrapersSpider):
 
     def _parse_start(self, item):
         """Parse start datetime as a naive datetime object."""
-        date_match = re.search(
-            r"[A-Z][a-z]+ \d{1,2}, \d{4}", self._parse_item_text(item)
-        )
+        item_text = self._parse_item_text(item)
+        date_match = re.search(r"[A-Z][a-z]+ \d{1,2}, \d{4}", item_text)
         if not date_match:
             return None
 
         date_str = date_match.group()
-        if self.regular_time:
+        # Starred meetings don't keep to the regular schedule, so the time from
+        # the description isn't applied to them; they stay at the default 00:00.
+        if self.regular_time and "*" not in item_text:
             return dateutil_parser(f"{date_str} {self.regular_time}")
         return dateutil_parser(date_str)
 

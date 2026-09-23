@@ -18,7 +18,7 @@ REGULAR_TIME_NOTES = (
     "The BoLC meet on the last Tuesday of each month at 5:15 pm at the Main Library "
     "(111 Library St NE), in the Board Room on Level 5, unless otherwise specified (*)."
 )
-ASTERISK_NOTE = "Please check the meeting attachment for start time details"
+ASTERISK_NOTE = "Please check the meeting attachment for start time details."
 
 
 @pytest.fixture(scope="module")
@@ -37,14 +37,10 @@ def fixture_html():
 
 def meeting_on(parsed_items, start, starred=None):
     """The meeting listed on `start`. Four dates carry two meetings, so `starred`
-    picks the special one from the regular one."""
+    picks the asterisked one from the regular one."""
     matches = [item for item in parsed_items if item["start"] == start]
     if starred is not None:
-        matches = [
-            item
-            for item in matches
-            if item["time_notes"].endswith(ASTERISK_NOTE) is starred
-        ]
+        matches = [item for item in matches if item["title"].endswith("*") is starred]
     assert len(matches) == 1
     return matches[0]
 
@@ -74,6 +70,12 @@ def test_title(first_meeting):
     assert first_meeting["title"] == "Board of Library Commissioners"
 
 
+def test_title_asterisked(parsed_items):
+    """The listing's asterisk is carried through to the title."""
+    starred = meeting_on(parsed_items, datetime(2026, 4, 28), starred=True)
+    assert starred["title"] == "Board of Library Commissioners*"
+
+
 def test_description(first_meeting):
     assert first_meeting["description"] == ""
 
@@ -88,10 +90,11 @@ def test_start(first_meeting):
 
 
 def test_start_time_applied(parsed_items):
-    """The one time stated in the prose is applied to every meeting."""
-    assert all(
-        item["start"].hour == 17 and item["start"].minute == 15 for item in parsed_items
-    )
+    """The time stated in the prose is applied to regular meetings. Asterisked
+    meetings depart from that schedule, so they keep the default 00:00."""
+    for item in parsed_items:
+        expected = (0, 0) if item["title"].endswith("*") else (17, 15)
+        assert (item["start"].hour, item["start"].minute) == expected
 
 
 def test_end(first_meeting):
@@ -108,13 +111,13 @@ def test_time_notes(first_meeting):
 
 def test_time_notes_asterisk(parsed_items):
     """Dates marked with an asterisk get an extra note appended."""
-    starred = meeting_on(parsed_items, datetime(2026, 4, 28, 17, 15), starred=True)
+    starred = meeting_on(parsed_items, datetime(2026, 4, 28), starred=True)
     assert starred["time_notes"] == f"{REGULAR_TIME_NOTES} {ASTERISK_NOTE}"
 
 
 def test_time_notes_asterisk_outside_link(parsed_items):
     """The asterisk is sometimes outside the date hyperlink."""
-    starred = meeting_on(parsed_items, datetime(2023, 4, 25, 17, 15), starred=True)
+    starred = meeting_on(parsed_items, datetime(2023, 4, 25), starred=True)
     assert starred["time_notes"].endswith(ASTERISK_NOTE)
 
 
@@ -143,31 +146,22 @@ def test_ids_unique(parsed_items):
 
 
 @pytest.mark.parametrize(
-    "start", [datetime(2023, 4, 25, 17, 15), datetime(2024, 4, 30, 17, 15)]
+    "date", [(2023, 4, 25), (2024, 4, 30), (2025, 4, 29), (2026, 4, 28)]
 )
-def test_id_special_meeting(parsed_items, start):
-    """A regular and a special meeting are listed on the same date four times
-    over. The starred row of the pair is the special meeting."""
-    stamp = start.strftime("%Y%m%d%H%M")
-    special = meeting_on(parsed_items, start, starred=True)
-    regular = meeting_on(parsed_items, start, starred=False)
-
-    assert special["id"] == (
-        f"gra_library_commissioners/{stamp}/special/board_of_library_commissioners"
-    )
-    assert regular["id"] == (
-        f"gra_library_commissioners/{stamp}/x/board_of_library_commissioners"
-    )
+def test_same_date_meetings_have_distinct_ids(parsed_items, date):
+    """A regular and an asterisked meeting are listed on the same date four
+    times over. They must not collapse onto one ID."""
+    regular = meeting_on(parsed_items, datetime(*date, 17, 15), starred=False)
+    starred = meeting_on(parsed_items, datetime(*date), starred=True)
+    assert regular["id"] != starred["id"]
 
 
-def test_id_lone_asterisk_not_special(parsed_items):
-    """An asterisk on a date with no twin marks a meeting held off the usual
-    last-Tuesday schedule, not a special meeting, so the ID stays unqualified."""
-    lone = meeting_on(parsed_items, datetime(2025, 10, 21, 17, 15))
+def test_id_lone_asterisk(parsed_items):
+    """An asterisk on a date with no twin is treated no differently: the marker
+    is in the title and the start stays at the default 00:00."""
+    lone = meeting_on(parsed_items, datetime(2025, 10, 21))
+    assert lone["title"] == "Board of Library Commissioners*"
     assert lone["time_notes"].endswith(ASTERISK_NOTE)
-    assert lone["id"] == (
-        "gra_library_commissioners/202510211715/x/board_of_library_commissioners"
-    )
 
 
 def test_status(first_meeting):
@@ -208,7 +202,7 @@ def test_links_agenda(upcoming_meeting):
 
 def test_links_empty(parsed_items, cancelled_meeting):
     """Cancelled meetings and unlinked "Packet" labels have no attachments."""
-    unlinked = meeting_on(parsed_items, datetime(2026, 10, 20, 17, 15))
+    unlinked = meeting_on(parsed_items, datetime(2026, 10, 20))
     assert cancelled_meeting["links"] == []
     assert unlinked["links"] == []
 
