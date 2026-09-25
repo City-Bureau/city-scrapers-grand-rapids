@@ -6,7 +6,7 @@ from city_scrapers_core.constants import COMMISSION
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.gra_city import GraCityCommissionSpider
+from city_scrapers.spiders.gra_city import gra_mobile_gr
 
 html_response = file_response(
     join(dirname(__file__), "files", "gra_mobile_gr.html"),
@@ -21,7 +21,7 @@ attachments_response = file_response(
 
 @pytest.fixture
 def commission_items():
-    spider = GraCityCommissionSpider()
+    spider = gra_mobile_gr()
     spider.attachments = attachments_response.json()
     with freeze_time("2026-09-24"):
         return [item for item in spider._parse_events(html_response)]

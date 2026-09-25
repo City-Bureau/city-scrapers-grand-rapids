@@ -83,6 +83,10 @@ def test_links(commission_items):
             "title": "Meeting cancellations and other public notices can be found on this page",  # noqa
         },
         {
+            "title": "YouTube channel",
+            "href": "https://www.youtube.com/@TheCityofGrandRapids",
+        },
+        {
             "href": "https://grandrapidsmi.new.swagit.com/videos/371916",
             "title": "Video",
         },

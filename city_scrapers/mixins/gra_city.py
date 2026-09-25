@@ -177,7 +177,7 @@ class GrandRapidsCityMixin(CityScrapersSpider, metaclass=GrandRapidsCityMixinMet
             {
                 "title": "YouTube channel",
                 "href": "https://www.youtube.com/@TheCityofGrandRapids",
-            }
+            },
         ]
 
         meeting_dt = meeting["start"]
