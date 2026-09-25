@@ -6,7 +6,7 @@ from city_scrapers_core.constants import COMMISSION
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.gra_city import gra_mobile_gr
+from city_scrapers.spiders.gra_city import GraMobileGrSpider
 
 html_response = file_response(
     join(dirname(__file__), "files", "gra_mobile_gr.html"),
@@ -21,7 +21,7 @@ attachments_response = file_response(
 
 @pytest.fixture
 def commission_items():
-    spider = gra_mobile_gr()
+    spider = GraMobileGrSpider()
     spider.attachments = attachments_response.json()
     with freeze_time("2026-09-24"):
         return [item for item in spider._parse_events(html_response)]
@@ -54,7 +54,7 @@ def test_time_notes(commission_items):
 def test_id(commission_items):
     assert (
         commission_items[0]["id"]
-        == "gra_city_commission/202502061200/x/mobile_gr_commission_meeting"
+        == "gra_mobile_gr/202502061200/x/mobile_gr_commission_meeting"
     )
 
 
