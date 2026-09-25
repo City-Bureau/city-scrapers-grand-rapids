@@ -1,11 +1,12 @@
 import json
 import random
 import re
-from datetime import datetime, date
+from datetime import date, datetime
 
-from city_scrapers.mixins.boarddocs import BoardDocsMixin
 from city_scrapers_core.items import Meeting
 from scrapy import Request
+
+from city_scrapers.mixins.boarddocs import BoardDocsMixin
 
 
 class GraPublicSchoolBoardSpider(BoardDocsMixin):
@@ -20,10 +21,12 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
 
     foxbright_url = "https://grps.org/Core/FoxbrightCalendars/Agenda/144574/"
     foxbright_calendar_id = "1002"
-    VIDEO_PLAYLIST_URL = "http://youtube.com/playlist?list=PL-TX6krcrZxZuKvEyOxDXB_Jy1CriraLl"
+    VIDEO_PLAYLIST_URL = (
+        "http://youtube.com/playlist?list=PL-TX6krcrZxZuKvEyOxDXB_Jy1CriraLl"
+    )
     BOARDDOCS_HEADERS = {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",  # noqa
         "X-Requested-With": "XMLHttpRequest",
     }
 
@@ -114,7 +117,9 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         self._foxbright_events = []
 
         for month_block in response.css(".agenda_block.month_table"):
-            header_text = month_block.css(".agenda_header.month_header::text").get(default="")
+            header_text = month_block.css(".agenda_header.month_header::text").get(
+                default=""
+            )
             header_match = re.search(r"([A-Za-z]+)\s+(\d{4})", header_text)
             if not header_match:
                 continue
@@ -122,14 +127,24 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             try:
                 base_year = int(year_str)
             except ValueError:
-                self.logger.warning("Failed to parse year from Foxbright header: '%s'", header_text)
+                self.logger.warning(
+                    "Failed to parse year from Foxbright header: '%s'", header_text
+                )
                 continue
 
             for item in month_block.css(".agenda_row.event_row"):
-                title = item.css(".event_title::text, .agenda_data .name::text").get(default="").strip()
+                title = (
+                    item.css(".event_title::text, .agenda_data .name::text")
+                    .get(default="")
+                    .strip()
+                )
                 date_str = item.css(".event_date::text").get(default="").strip()
                 time_str = item.css(".event_time::text").get(default="").strip()
-                location_address = item.css(".event_detail.location .detail_value::text").get(default="").strip()
+                location_address = (
+                    item.css(".event_detail.location .detail_value::text")
+                    .get(default="")
+                    .strip()
+                )
 
                 location = (
                     {"name": "", "address": location_address}
@@ -142,21 +157,25 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                         full_date_str = f"{date_str} {base_year}"
                         parsed_date = datetime.strptime(full_date_str, "%b %d %Y")
                         if parsed_date.date() >= self.CUTOFF_DATE:
-                            self._foxbright_events.append({
-                                "title": title,
-                                "date": parsed_date.date(),
-                                "time_str": time_str,
-                                "location": location,
-                            })
+                            self._foxbright_events.append(
+                                {
+                                    "title": title,
+                                    "date": parsed_date.date(),
+                                    "time_str": time_str,
+                                    "location": location,
+                                }
+                            )
                     except ValueError:
-                        self.logger.warning("Failed to parse date from Foxbright: '%s'", date_str)
+                        self.logger.warning(
+                            "Failed to parse date from Foxbright: '%s'", date_str
+                        )
 
         yield Request(
             self._parse_source(),
             callback=self._request_boarddocs_meetings_list,
             headers={
                 **self.BOARDDOCS_HEADERS,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",  # noqa
                 "Referer": "https://grps.org/",
             },
             dont_filter=True,
@@ -182,7 +201,9 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         try:
             data = json.loads(response.text)
         except Exception as e:
-            self.logger.warning("Failed to parse JSON response from BoardDocs meetings list: %s", e)
+            self.logger.warning(
+                "Failed to parse JSON response from BoardDocs meetings list: %s", e
+            )
             data = []
 
         cutoff_int = int(self.CUTOFF_DATE.strftime("%Y%m%d"))
@@ -206,7 +227,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             numberdate = item.get("numberdate")
             yield self._boarddocs_post(
                 "BD-GetMeeting",
-                body=f"id={meeting_id}&current_committee_id={self.boarddocs_committee_id}",
+                body=f"id={meeting_id}&current_committee_id={self.boarddocs_committee_id}",  # noqa
                 referer=response.url,
                 callback=self._parse_boarddocs_detail,
                 meta={"numberdate": numberdate},
@@ -214,7 +235,8 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
 
     def _parse_boarddocs_detail(self, response):
         """
-        Parses BoardDocs meeting detail using `numberdate` for the date and flexible regex for the start time,
+        Parses BoardDocs meeting detail using `numberdate`
+        for the date and flexible regex for the start time,
         building `self._boarddocs_links_map` with key "YYYY-MM-DD HH:MM:SS".
         """
         self._pending_boarddocs -= 1
@@ -224,7 +246,8 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             try:
                 d_obj = datetime.strptime(str(numberdate), "%Y%m%d").date()
 
-                # Extract time flexibly from any text in the header/detail view (e.g. "@ 5:00 p.m.")
+                # Extract time from any text in the header/detail view
+                # (e.g. "@ 5:00 p.m.")
                 detail_text = response.css("dd.col.rightcol::text").get(default="")
                 if not detail_text:
                     detail_text = response.text
@@ -232,17 +255,25 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 times = self._extract_all_times(detail_text)
                 t_obj = times[0] if times else None
                 if t_obj:
-                    dt_key = datetime.combine(d_obj, t_obj).strftime("%Y-%m-%d %H:%M:%S")
+                    dt_key = datetime.combine(d_obj, t_obj).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
 
-                    clipboard_url = response.css("button.url::attr(data-clipboard-text)").get()
+                    clipboard_url = response.css(
+                        "button.url::attr(data-clipboard-text)"
+                    ).get()
                     if clipboard_url:
                         self._boarddocs_links_map[dt_key] = clipboard_url
                 else:
                     self.logger.warning(
-                        "Failed to parse time from BoardDocs detail for numberdate: '%s'", numberdate
+                        "Failed to parse time from BoardDocs detail for numberdate: '%s'",  # noqa
+                        numberdate,
                     )
             except ValueError:
-                self.logger.warning("Failed to parse date from BoardDocs detail for numberdate: '%s'", numberdate)
+                self.logger.warning(
+                    "Failed to parse date from BoardDocs detail for numberdate: '%s'",
+                    numberdate,
+                )
 
         if self._pending_boarddocs <= 0:
             for meeting in self._parse_all_meetings():
@@ -252,7 +283,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         """
         Iterates over Foxbright events, computes start/end datetimes, looks up
         attachment links from `self._boarddocs_links_map`, and yields the
-        constructed Meeting items. 
+        constructed Meeting items.
         """
         for ev in self._foxbright_events:
             start_dt = None
@@ -261,7 +292,10 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             if ev.get("time_str"):
                 times = self._extract_all_times(ev["time_str"])
                 if not times:
-                    self.logger.warning("Failed to parse start time from Foxbright: '%s'", ev["time_str"])
+                    self.logger.warning(
+                        "Failed to parse start time from Foxbright: '%s'",
+                        ev["time_str"],
+                    )
                 else:
                     start_dt = datetime.combine(ev["date"], times[0])
                     if len(times) >= 2:
@@ -271,7 +305,12 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             if start_dt is not None:
                 dt_key = start_dt.strftime("%Y-%m-%d %H:%M:%S")
                 if dt_key in self._boarddocs_links_map:
-                    links.append({"href": self._boarddocs_links_map[dt_key], "title": "Meeting Attachments"})
+                    links.append(
+                        {
+                            "href": self._boarddocs_links_map[dt_key],
+                            "title": "Meeting Attachments",
+                        }
+                    )
 
             # Add constant video playlist link to all meetings
             links.append({"href": self.VIDEO_PLAYLIST_URL, "title": "Video"})
