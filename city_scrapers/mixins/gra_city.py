@@ -52,15 +52,25 @@ class GrandRapidsCityMixin(CityScrapersSpider, metaclass=GrandRapidsCityMixinMet
         self.now = datetime.now(timezone.utc).replace(tzinfo=None)
         self.past_date = self.now - relativedelta(years=2)
         self.future_date = self.now + relativedelta(months=6)
+        years = list(range(self.past_date.year, self.now.year + 1))
 
         yield Request(
             url=self.upcoming_attachments_url.format(committee_id=self.committee_id),
-            callback=self._parse_upcoming,
+            callback=self._parse_attachments,
+            errback=self._attachments_failed,
+            cb_kwargs={
+                "remaining_years": years,
+                "docs": [],
+            },
         )
 
-    def _parse_upcoming(self, response):
-        years = list(range(self.past_date.year, self.now.year + 1))
-        yield self._archived_request(years, list(response.json()))
+    def _parse_attachments(self, response, remaining_years, docs):
+        yield self._continue(remaining_years, docs + response.json())
+
+    def _attachments_failed(self, failure):
+        kw = failure.request.cb_kwargs
+        self.logger.warning(f"Attachments request failed: {failure.request.url}")
+        yield self._continue(kw["remaining_years"], kw["docs"])
 
     def _archived_request(self, years, docs):
         year, *remaining = years
@@ -68,23 +78,15 @@ class GrandRapidsCityMixin(CityScrapersSpider, metaclass=GrandRapidsCityMixinMet
             url=self.archived_attachments_url.format(
                 year=year, committee_id=self.committee_id
             ),
-            callback=self._parse_archived,
-            errback=self._archived_failed,
+            callback=self._parse_attachments,
+            errback=self._attachments_failed,
             cb_kwargs={
                 "remaining_years": remaining,
                 "docs": docs,
             },
         )
 
-    def _parse_archived(self, response, remaining_years, docs):
-        yield self._next_step(remaining_years, docs + response.json())
-
-    def _archived_failed(self, failure):
-        kw = failure.request.cb_kwargs
-        self.logger.warning(f"Archived request failed: {failure.request.url}")
-        yield self._next_step(kw["remaining_years"], kw["docs"])
-
-    def _next_step(self, remaining_years, docs):
+    def _continue(self, remaining_years, docs):
         if remaining_years:
             return self._archived_request(remaining_years, docs)
 
