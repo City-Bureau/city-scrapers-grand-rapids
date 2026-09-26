@@ -30,7 +30,6 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         "X-Requested-With": "XMLHttpRequest",
     }
 
-    # Single source of truth for the "only future/relevant meetings" cutoff.
     CUTOFF_DATE = date(2026, 7, 1)
 
     custom_settings = {
@@ -38,16 +37,9 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         "COOKIES_ENABLED": True,
     }
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _boarddocs_post(self, endpoint, body, referer, callback, meta=None):
-        """
-        Builds a POST Request against a BoardDocs Board.nsf endpoint, applying the
-        shared headers, Origin, cache-busting suffix, and Referer used by every
-        BoardDocs call this spider makes.
-        """
+    def _boarddocs_post(
+        self, endpoint, body, referer, callback, meta=None, errback=None
+    ):
         return Request(
             f"{self.base_url}/{self.boarddocs_state}/{self.boarddocs_slug}/Board.nsf/"
             f"{endpoint}?open&0.{self.gen_random_int()}",
@@ -60,11 +52,11 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             },
             callback=callback,
             meta=meta or {},
+            errback=errback,
             dont_filter=True,
         )
 
     def _extract_all_times(self, text):
-        """Returns every parsable "H:MM AM/PM"-ish time found in `text`, in order."""
         if not text:
             return []
         candidates = re.findall(r"(\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?)", text)
@@ -78,15 +70,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 continue
         return times
 
-    # ------------------------------------------------------------------
-    # Foxbright calendar
-    # ------------------------------------------------------------------
-
     def start_requests(self):
-        """
-        Fetches the entire Foxbright calendar in one request using
-        Month=AllFromStart.
-        """
         self._foxbright_events = []
         self._boarddocs_links_map = {}
         self._pending_boarddocs = 0
@@ -110,10 +94,6 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         )
 
     def _parse_foxbright_all(self, response):
-        """
-        Parses the full-calendar Foxbright response, collects events from the
-        cutoff date onwards, and proceeds to request the BoardDocs meetings list.
-        """
         self._foxbright_events = []
 
         for month_block in response.css(".agenda_block.month_table"):
@@ -173,6 +153,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         yield Request(
             self._parse_source(),
             callback=self._request_boarddocs_meetings_list,
+            errback=self._handle_public_source_error,
             headers={
                 **self.BOARDDOCS_HEADERS,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",  # noqa
@@ -181,9 +162,11 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             dont_filter=True,
         )
 
-    # ------------------------------------------------------------------
-    # BoardDocs
-    # ------------------------------------------------------------------
+    def _handle_public_source_error(self, failure):
+        self.logger.warning(
+            "BoardDocs public page request failed, continuing anyway: %s", failure
+        )
+        yield from self._request_boarddocs_meetings_list(None)
 
     def _request_boarddocs_meetings_list(self, response):
         yield self._boarddocs_post(
@@ -191,13 +174,16 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             body=f"current_committee_id={self.boarddocs_committee_id}",
             referer=self._parse_source(),
             callback=self._parse_boarddocs_list,
+            errback=self._handle_boarddocs_list_error,
         )
 
+    def _handle_boarddocs_list_error(self, failure):
+        self.logger.warning("BoardDocs list request failed: %r", failure)
+        self._pending_boarddocs = 0
+        self._boarddocs_links_map = {}
+        yield from self._parse_all_meetings()
+
     def _parse_boarddocs_list(self, response):
-        """
-        Receives the list of BoardDocs meetings and fans out to request detail pages
-        for meetings from the cutoff date onwards.
-        """
         try:
             data = json.loads(response.text)
         except Exception as e:
@@ -211,7 +197,14 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         for item in data:
             if not item or not item.get("unique") or not item.get("numberdate"):
                 continue
-            if int(item.get("numberdate")) >= cutoff_int:
+            try:
+                numberdate_int = int(item["numberdate"])
+            except (TypeError, ValueError):
+                self.logger.warning(
+                    "Invalid BoardDocs numberdate: %r", item.get("numberdate")
+                )
+                continue
+            if numberdate_int >= cutoff_int:
                 valid_items.append(item)
 
         self._pending_boarddocs = len(valid_items)
@@ -231,23 +224,23 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 referer=response.url,
                 callback=self._parse_boarddocs_detail,
                 meta={"numberdate": numberdate},
+                errback=self._handle_boarddocs_detail_error,
             )
 
+    def _handle_boarddocs_detail_error(self, failure):
+        self.logger.warning("BoardDocs detail request failed: %r", failure)
+        self._pending_boarddocs -= 1
+        if self._pending_boarddocs <= 0:
+            for meeting in self._parse_all_meetings():
+                yield meeting
+
     def _parse_boarddocs_detail(self, response):
-        """
-        Parses BoardDocs meeting detail using `numberdate`
-        for the date and flexible regex for the start time,
-        building `self._boarddocs_links_map` with key "YYYY-MM-DD HH:MM:SS".
-        """
         self._pending_boarddocs -= 1
         numberdate = response.meta.get("numberdate")
 
         if numberdate:
             try:
                 d_obj = datetime.strptime(str(numberdate), "%Y%m%d").date()
-
-                # Extract time from any text in the header/detail view
-                # (e.g. "@ 5:00 p.m.")
                 detail_text = response.css("dd.col.rightcol::text").get(default="")
                 if not detail_text:
                     detail_text = response.text
@@ -280,11 +273,6 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 yield meeting
 
     def _parse_all_meetings(self):
-        """
-        Iterates over Foxbright events, computes start/end datetimes, looks up
-        attachment links from `self._boarddocs_links_map`, and yields the
-        constructed Meeting items.
-        """
         for ev in self._foxbright_events:
             start_dt = None
             end_dt = None
@@ -312,7 +300,6 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                         }
                     )
 
-            # Add constant video playlist link to all meetings
             links.append({"href": self.VIDEO_PLAYLIST_URL, "title": "Video"})
 
             meeting = Meeting(
