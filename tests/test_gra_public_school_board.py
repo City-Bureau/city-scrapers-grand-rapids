@@ -46,12 +46,10 @@ def _detail_response_for(numberdate):
     """
     path = join(FILES_DIR, f"gra_public_school_board_detail_{numberdate}.html")
     try:
-        response = file_response(
+        return file_response(
             path,
             url="https://go.boarddocs.com/mi/grand/Board.nsf/BD-GetMeeting?open",
         )
-        response.meta["numberdate"] = numberdate
-        return response
     except FileNotFoundError:
         return None
 
@@ -70,10 +68,10 @@ def parsed_items(spider, foxbright_response, boarddocs_list_response):
         detail_requests = list(spider._parse_boarddocs_list(boarddocs_list_response))
 
         for req in detail_requests:
-            numberdate = req.meta["numberdate"]
+            numberdate = req.cb_kwargs["numberdate"]
             detail_response = _detail_response_for(numberdate)
             if detail_response is not None:
-                list(spider._parse_boarddocs_detail(detail_response))
+                list(spider._parse_boarddocs_detail(detail_response, **req.cb_kwargs))
             else:
                 spider._pending_boarddocs -= 1
 
@@ -190,3 +188,30 @@ def test_classification_committee(parsed_items):
 
 def test_all_day(parsed_item):
     assert parsed_item["all_day"] is False
+
+
+# Add test for location_name_from_description
+@pytest.mark.parametrize(
+    "title,start,expected_name",
+    [
+        (
+            "Board of Education Regular Meeting",
+            datetime(2026, 7, 13, 18, 30),
+            "Auditorium",
+        ),
+        (
+            "Canceled -- Board of Education Policy Committee Meeting",
+            datetime(2026, 9, 23, 16, 30),
+            "Library Building, Room 112",
+        ),
+    ],
+    ids=["auditorium_with_links", "room_no_links"],
+)
+def test_location_name_from_description(parsed_items, title, start, expected_name):
+    meeting = next(
+        m for m in parsed_items if m["title"] == title and m["start"] == start
+    )
+    assert meeting["location"] == {
+        "name": expected_name,
+        "address": "1331 M.L.K. Jr St SE, Grand Rapids, MI 49506, USA",
+    }

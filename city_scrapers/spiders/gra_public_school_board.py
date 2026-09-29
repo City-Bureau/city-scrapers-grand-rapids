@@ -3,7 +3,9 @@ import random
 import re
 from datetime import date, datetime
 
+from city_scrapers_core.constants import BOARD, COMMITTEE
 from city_scrapers_core.items import Meeting
+from dateutil.relativedelta import relativedelta
 from scrapy import Request
 
 from city_scrapers.mixins.boarddocs import BoardDocsMixin
@@ -16,7 +18,6 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         "https://grps.org/our-district/board-of-education/board-meeting-schedule/"
     ]
     boarddocs_slug = "grand"
-    boarddocs_state = "mi"
     boarddocs_committee_id = "A4EP6J588C05"
 
     foxbright_url = "https://grps.org/Core/FoxbrightCalendars/Agenda/144574/"
@@ -30,15 +31,10 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         "X-Requested-With": "XMLHttpRequest",
     }
 
-    CUTOFF_DATE = date(2026, 7, 1)
-
-    custom_settings = {
-        **BoardDocsMixin.custom_settings,
-        "COOKIES_ENABLED": True,
-    }
+    CUTOFF_DATE = date.today() - relativedelta(months=3, days=1)
 
     def _boarddocs_post(
-        self, endpoint, body, referer, callback, meta=None, errback=None
+        self, endpoint, body, referer, callback, cb_kwargs=None, errback=None
     ):
         return Request(
             f"{self.base_url}/{self.boarddocs_state}/{self.boarddocs_slug}/Board.nsf/"
@@ -51,7 +47,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 "Referer": referer,
             },
             callback=callback,
-            meta=meta or {},
+            cb_kwargs=cb_kwargs or {},
             errback=errback,
             dont_filter=True,
         )
@@ -62,7 +58,10 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         candidates = re.findall(r"(\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?)", text)
         times = []
         for candidate in candidates:
-            cleaned = candidate.replace(".", "").upper()
+            # Normalize "6:30PM" / "6:30 p.m." to "6:30 PM" for strptime
+            cleaned = re.sub(
+                r"\s*([AP])M$", r" \1M", candidate.replace(".", "").upper()
+            )  # noqa
             try:
                 times.append(datetime.strptime(cleaned, "%I:%M %p").time())
             except ValueError:
@@ -125,11 +124,12 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                     .get(default="")
                     .strip()
                 )
+                location_name = self._parse_location_name(item)
 
                 location = (
-                    {"name": "", "address": location_address}
+                    {"name": location_name, "address": location_address}
                     if location_address
-                    else {"name": "TBD", "address": ""}
+                    else {"name": location_name or "TBD", "address": ""}
                 )
 
                 if date_str:
@@ -161,6 +161,19 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             },
             dont_filter=True,
         )
+
+    def _parse_location_name(self, item):
+        """Room details (e.g. "Library Building, Room 112" or "Located in the
+        Auditorium.") live in the event description. Only the description's
+        own text nodes are used so link text like "Agenda will be posted on
+        BoardDocs." or "Watch Live" is ignored."""
+        parts = [
+            re.sub(r"\s+", " ", text).strip()
+            for text in item.css(".details .description::text").getall()
+        ]
+        name = next((part for part in parts if part), "")
+        name = re.sub(r"^Located in\s+(the\s+)?", "", name, flags=re.IGNORECASE)
+        return name.rstrip(".").strip()
 
     def _handle_public_source_error(self, failure):
         self.logger.warning(
@@ -223,7 +236,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 body=f"id={meeting_id}&current_committee_id={self.boarddocs_committee_id}",  # noqa
                 referer=response.url,
                 callback=self._parse_boarddocs_detail,
-                meta={"numberdate": numberdate},
+                cb_kwargs={"numberdate": numberdate},
                 errback=self._handle_boarddocs_detail_error,
             )
 
@@ -234,9 +247,8 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             for meeting in self._parse_all_meetings():
                 yield meeting
 
-    def _parse_boarddocs_detail(self, response):
+    def _parse_boarddocs_detail(self, response, numberdate=None):
         self._pending_boarddocs -= 1
-        numberdate = response.meta.get("numberdate")
 
         if numberdate:
             try:
@@ -289,16 +301,23 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                     if len(times) >= 2:
                         end_dt = datetime.combine(ev["date"], times[1])
 
+            # _get_id and _get_status need a start datetime; skip rather than
+            # let one bad event raise and drop every meeting after it
+            if start_dt is None:
+                self.logger.warning(
+                    "Skipping Foxbright event without a parseable time: %s", ev
+                )
+                continue
+
             links = []
-            if start_dt is not None:
-                dt_key = start_dt.strftime("%Y-%m-%d %H:%M:%S")
-                if dt_key in self._boarddocs_links_map:
-                    links.append(
-                        {
-                            "href": self._boarddocs_links_map[dt_key],
-                            "title": "Meeting Attachments",
-                        }
-                    )
+            dt_key = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+            if dt_key in self._boarddocs_links_map:
+                links.append(
+                    {
+                        "href": self._boarddocs_links_map[dt_key],
+                        "title": "Meeting Attachments",
+                    }
+                )
 
             links.append({"href": self.VIDEO_PLAYLIST_URL, "title": "Video"})
 
@@ -321,5 +340,5 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
 
     def _parse_classification(self, title):
         if "committee" in title.lower():
-            return "Committee"
-        return "Board"
+            return COMMITTEE
+        return BOARD
