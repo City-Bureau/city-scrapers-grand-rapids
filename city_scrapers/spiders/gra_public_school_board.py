@@ -1,7 +1,8 @@
 import json
 import random
 import re
-from datetime import date, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from city_scrapers_core.constants import BOARD, COMMITTEE
 from city_scrapers_core.items import Meeting
@@ -31,7 +32,10 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         "X-Requested-With": "XMLHttpRequest",
     }
 
-    CUTOFF_DATE = date.today() - relativedelta(months=3, days=1)
+    @property
+    def cutoff_date(self):
+        today = datetime.now(ZoneInfo(self.timezone)).date()
+        return today - relativedelta(months=3, days=1)
 
     def _boarddocs_post(
         self, endpoint, body, referer, callback, cb_kwargs=None, errback=None
@@ -136,7 +140,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                     try:
                         full_date_str = f"{date_str} {base_year}"
                         parsed_date = datetime.strptime(full_date_str, "%b %d %Y")
-                        if parsed_date.date() >= self.CUTOFF_DATE:
+                        if parsed_date.date() >= self.cutoff_date:
                             self._foxbright_events.append(
                                 {
                                     "title": title,
@@ -205,7 +209,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             )
             data = []
 
-        cutoff_int = int(self.CUTOFF_DATE.strftime("%Y%m%d"))
+        cutoff_int = int(self.cutoff_date.strftime("%Y%m%d"))
         valid_items = []
         for item in data:
             if not item or not item.get("unique") or not item.get("numberdate"):
@@ -332,7 +336,6 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                 location=ev["location"],
                 links=links,
                 source=self.start_urls[0],
-                status="",
             )
             meeting["id"] = self._get_id(meeting)
             meeting["status"] = self._get_status(meeting)
