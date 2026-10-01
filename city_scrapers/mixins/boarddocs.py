@@ -29,7 +29,8 @@ class BoardDocsMixin(CityScrapersSpider, metaclass=BoardDocsMixinMeta):
     for meeting information.
     """
 
-    custom_settings = {"ROBOTSTXT_OBEY": False}
+    custom_settings = {"ROBOTSTXT_OBEY": False, "COOKIES_ENABLED": True}
+
     base_url = "https://go.boarddocs.com"
     boarddocs_state = "mi"
     classification = BOARD
