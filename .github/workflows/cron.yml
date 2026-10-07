@@ -19,6 +19,7 @@ env:
   AZURE_CONTAINER: ${{ secrets.AZURE_CONTAINER }}
   AZURE_STATUS_CONTAINER: ${{ secrets.AZURE_STATUS_CONTAINER }}
   SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+  YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
 
 jobs:
   crawl:

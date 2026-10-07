@@ -1,13 +1,14 @@
 import json
 import random
 import re
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from city_scrapers_core.constants import BOARD, COMMITTEE
+from city_scrapers_core.constants import BOARD, COMMITTEE, TENTATIVE
 from city_scrapers_core.items import Meeting
 from dateutil.relativedelta import relativedelta
 from scrapy import Request
+from w3lib.url import add_or_replace_parameters
 
 from city_scrapers.mixins.boarddocs import BoardDocsMixin
 
@@ -23,9 +24,11 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
 
     foxbright_url = "https://grps.org/Core/FoxbrightCalendars/Agenda/144574/"
     foxbright_calendar_id = "1002"
-    VIDEO_PLAYLIST_URL = (
-        "http://youtube.com/playlist?list=PL-TX6krcrZxZuKvEyOxDXB_Jy1CriraLl"
+    youtube_playlist_id = "PL-TX6krcrZxZuKvEyOxDXB_Jy1CriraLl"
+    youtube_playlist_url = (
+        f"https://www.youtube.com/playlist?list={youtube_playlist_id}"
     )
+    youtube_api_url = "https://www.googleapis.com/youtube/v3/playlistItems"
     BOARDDOCS_HEADERS = {
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",  # noqa
@@ -77,6 +80,7 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
         self._foxbright_events = []
         self._boarddocs_links_map = {}
         self._pending_boarddocs = 0
+        self._video_map = {}
 
         body = (
             "Month=AllFromStart"
@@ -154,6 +158,128 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                             "Failed to parse date from Foxbright: '%s'", date_str
                         )
 
+        yield from self._request_youtube_videos()
+
+    def _request_youtube_videos(self, page_token=None):
+        """Video titles look like "BOE Meeting 9/14/2026" or "Board of Education
+        Meeting 7-13-26", so the playlist is read through the YouTube Data API
+        to link each meeting to its own recording instead of the playlist.
+        Without an API key, meetings are yielded without video links."""
+        api_key = self.settings.get("YOUTUBE_API_KEY")
+        if not api_key:
+            self.logger.warning("YOUTUBE_API_KEY not set, skipping video links")
+            yield from self._request_boarddocs_public_page()
+            return
+
+        params = {
+            "part": "snippet",
+            "playlistId": self.youtube_playlist_id,
+            "maxResults": "50",
+            "fields": "nextPageToken,items(snippet(title,resourceId/videoId))",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        yield Request(
+            add_or_replace_parameters(self.youtube_api_url, params),
+            # Sent as a header so the key stays out of logged request URLs
+            headers={"X-Goog-Api-Key": api_key},
+            callback=self._parse_youtube_videos,
+            errback=self._handle_youtube_error,
+            dont_filter=True,
+        )
+
+    def _handle_youtube_error(self, failure):
+        self.logger.warning(
+            "YouTube API request failed, continuing anyway: %r", failure
+        )
+        yield from self._request_boarddocs_public_page()
+
+    def _parse_youtube_videos(self, response):
+        try:
+            data = json.loads(response.text)
+        except ValueError as e:
+            self.logger.warning("Failed to parse YouTube API response: %s", e)
+            data = {}
+
+        reached_cutoff = False
+        for item in data.get("items", []):
+            snippet = item.get("snippet", {})
+            title = snippet.get("title", "")
+            video_id = snippet.get("resourceId", {}).get("videoId")
+            if not video_id or title in ("Private video", "Deleted video"):
+                continue
+            video_date = self._parse_video_date(title)
+            if not video_date:
+                self.logger.warning("No date found in YouTube video title: '%s'", title)
+                continue
+            if video_date < self.cutoff_date:
+                reached_cutoff = True
+                continue
+            lang = "es" if re.search(r"espa[ñn]ol|spanish", title, re.I) else "en"
+            key = (video_date, self._meeting_kind(title))
+            self._video_map.setdefault(key, {})[
+                lang
+            ] = f"https://www.youtube.com/watch?v={video_id}"
+
+        # The playlist is newest first, so once a video older than the cutoff
+        # shows up, later pages are older too and would only spend API quota
+        next_token = data.get("nextPageToken")
+        if next_token and not reached_cutoff:
+            yield from self._request_youtube_videos(next_token)
+        else:
+            yield from self._request_boarddocs_public_page()
+
+    def _parse_video_date(self, title):
+        """Titles have used "9/14/2026", "7-13-26", "03 24 25", "Dec 8, 2025",
+        "November, 26 2024" and "January 8. 2024" over the years."""
+        for match in re.finditer(
+            r"\b(\d{1,2})([/\- ])(\d{1,2})\2(\d{4}|\d{2})\b", title
+        ):
+            month, _, day, year = match.groups()
+            video_date = self._build_date(year, month, day)
+            if video_date:
+                return video_date
+        for match in re.finditer(
+            r"\b([A-Za-z]{3,9})[.,]?\s+(\d{1,2})[.,]?\s+(\d{4})\b", title
+        ):
+            month_name, day, year = match.groups()
+            try:
+                month = datetime.strptime(month_name[:3], "%b").month
+            except ValueError:
+                continue
+            video_date = self._build_date(year, month, day)
+            if video_date:
+                return video_date
+        return None
+
+    def _build_date(self, year, month, day):
+        year = int(year)
+        if year < 100:
+            year += 2000
+        try:
+            return date(year, int(month), int(day))
+        except ValueError:
+            return None
+
+    def _meeting_kind(self, title):
+        """Shared by video and Foxbright titles so a video only matches the
+        meeting of the same kind on its date (e.g. the 6:30 Regular Meeting
+        rather than the 5:00 committee meeting held the same evening).
+        Committees are told apart by the word before "Committee", since two
+        can meet on the same date and titles vary ("GRPS Finance Committe
+        Meeting" vs "Board of Education Finance Committee Meeting")."""
+        title = title.lower()
+        committee = re.search(r"(\w+)\s+committe", title)
+        if committee:
+            return f"committee:{committee.group(1)}"
+        if "committe" in title:
+            return "committee"
+        for kind in ("work session", "special"):
+            if kind in title:
+                return kind
+        return "regular"
+
+    def _request_boarddocs_public_page(self):
         yield Request(
             self._parse_source(),
             callback=self._request_boarddocs_meetings_list,
@@ -323,7 +449,13 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
                     }
                 )
 
-            links.append({"href": self.VIDEO_PLAYLIST_URL, "title": "Video"})
+            videos = self._video_map.get(
+                (start_dt.date(), self._meeting_kind(ev["title"])), {}
+            )
+            if "en" in videos:
+                links.append({"href": videos["en"], "title": "Video"})
+            if "es" in videos:
+                links.append({"href": videos["es"], "title": "Video (Español)"})
 
             meeting = Meeting(
                 title=ev["title"] or "Board of Education Meeting",
@@ -339,6 +471,12 @@ class GraPublicSchoolBoardSpider(BoardDocsMixin):
             )
             meeting["id"] = self._get_id(meeting)
             meeting["status"] = self._get_status(meeting)
+            # Upcoming meetings point to the playlist until their own recording
+            # is posted; past meetings without a recording get no video link
+            if not videos and meeting["status"] == TENTATIVE:
+                meeting["links"].append(
+                    {"href": self.youtube_playlist_url, "title": "YouTube channel"}
+                )
             yield meeting
 
     def _parse_classification(self, title):
