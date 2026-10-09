@@ -43,6 +43,7 @@ env:
   AZURE_ACCOUNT_NAME: ${{ secrets.AZURE_ACCOUNT_NAME }}
   AZURE_STAGING_CONTAINER: ${{ secrets.AZURE_STAGING_CONTAINER }}
   SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+  YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
 
 jobs:
   crawl:
