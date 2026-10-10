@@ -2,105 +2,108 @@ from datetime import datetime
 from os.path import dirname, join
 
 import pytest
-from city_scrapers_core.constants import NOT_CLASSIFIED
+from city_scrapers_core.constants import COMMISSION
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.gra_city_commission import GraCityCommissionSpider
+from city_scrapers.spiders.gra_city import GraCityCommissionSpider
 
-test_response = file_response(
+html_response = file_response(
     join(dirname(__file__), "files", "gra_city_commission.html"),
-    url="http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx?View=List",
+    url="https://events.grandrapidsmi.gov/meetings/Index?action=search&StartDate=01/01/26&EndDate=03/23/27&Keywords=City-Commission-Meeting",  # noqa
 )
-spider = GraCityCommissionSpider()
 
-freezer = freeze_time("2023-08-11")
-freezer.start()
-
-parsed_items = [item for item in spider.parse(test_response)]
-
-freezer.stop()
+attachments_response = file_response(
+    join(dirname(__file__), "files", "gra_city_commission.json"),
+    url="https://grandrapidscity.primegov.com/api/v2/PublicPortal/ListArchivedMeetingsByCommitteeId?year=2026&committeeId=1",  # noqa
+)
 
 
-"""
-Uncomment below
-
-def test_tests():
-    print("Please write some tests for this spider or at least disable this one.")
-    assert False
-"""
-
-
-def test_title():
-    assert parsed_items[0]["title"] == "City Commission"
+@pytest.fixture
+def commission_items():
+    spider = GraCityCommissionSpider()
+    spider.attachments = attachments_response.json()
+    with freeze_time("2026-09-24"):
+        return [item for item in spider._parse_events(html_response)]
 
 
-def test_description():
-    assert parsed_items[0]["description"] == ""
+def test_count(commission_items):
+    assert len(commission_items) == 25
 
 
-def test_start():
-    assert parsed_items[0]["start"] == datetime(2023, 1, 10, 14, 0)
+def test_title(commission_items):
+    assert commission_items[0]["title"] == "City Commission Meeting"
 
 
-# def test_end():
-#     assert parsed_items[0]["end"] == datetime(2019, 1, 1, 0, 0)
+def test_description(commission_items):
+    assert commission_items[0]["description"] == ""
 
 
-def test_time_notes():
-    assert parsed_items[0]["time_notes"] == ""
+def test_start(commission_items):
+    assert commission_items[0]["start"] == datetime(2026, 1, 13, 14, 0)
 
 
-def test_id():
-    assert parsed_items[0]["id"] == "gra_city_commission/202301101400/x/city_commission"
+def test_end(commission_items):
+    assert commission_items[0]["end"] is None
 
 
-def test_status():
-    assert parsed_items[0]["status"] == "passed"
+def test_time_notes(commission_items):
+    assert commission_items[0]["time_notes"] == ""
 
 
-"""
-def test_location():
-    assert parsed_items[0]["location"] == {
-        "name": "",
-        "address": "TUESDAY, JANUARY 10, 2023  2:00 PM\r\rBoard:\tCity Commission\rType:\tRegular Session\rStatus:\tClosed\r\r\tCity Commission Chambers\r\tCity Hall, 300 Monroe Ave NW, 9th Floor, GrandRapids, MI  49503",  # noqa
-    }
-"""
-
-
-def test_source():
+def test_id(commission_items):
     assert (
-        parsed_items[0]["source"]
-        == "http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx?View=List"
+        commission_items[0]["id"]
+        == "gra_city_commission/202601131400/x/city_commission_meeting"
     )
 
 
-def test_links():
-    assert parsed_items[0]["links"] == [
+def test_status(commission_items):
+    assert commission_items[0]["status"] == "passed"
+
+
+def test_location(commission_items):
+    assert commission_items[0]["location"] == {
+        "name": "City of Grand Rapids - City Hall",
+        "address": "300 Monroe Ave NW, Grand Rapids, MI 49503",
+    }
+
+
+def test_source(commission_items):
+    assert (
+        commission_items[0]["source"]
+        == "https://events.grandrapidsmi.gov/meetings/Detail/2026-01-13-1400-City-Commission-Meeting"  # noqa
+    )
+
+
+def test_links(commission_items):
+    assert commission_items[0]["links"] == [
         {
-            "href": "http://grandrapidscitymi.iqm2.com//Citizens/Detail_Meeting.aspx?ID=7034",  # noqa
-            "title": "Meeting Page",
+            "href": "https://www.grandrapidsmi.gov/government/public-notices/",
+            "title": "Meeting cancellations and other public notices can be found on this page",  # noqa
         },
         {
-            "href": "http://grandrapidscitymi.iqm2.com//Citizens/Detail_Meeting.aspx?ID=7034",  # noqa
+            "title": "YouTube channel",
+            "href": "https://www.youtube.com/@TheCityofGrandRapids",
+        },
+        {
+            "href": "https://grandrapidsmi.new.swagit.com/videos/371916",
+            "title": "Video",
+        },
+        {
+            "href": "https://grandrapidscity.primegov.com/Public/CompiledDocument?meetingTemplateId=30218&compileOutputType=1",  # noqa
             "title": "Agenda",
         },
         {
-            "href": "http://grandrapidscitymi.iqm2.com/Citizens/FileOpen.aspx?Type=1&ID=5138&Inline=True",  # noqa
-            "title": "Agenda Packet",
+            "href": "https://grandrapidscity.primegov.com/Public/CompiledDocument?meetingTemplateId=30220&compileOutputType=1",  # noqa
+            "title": "Packet",
         },
-        {"href": None, "title": "Summary"},
         {
-            "href": "http://grandrapidscitymi.iqm2.com/Citizens/FileOpen.aspx?Type=12&ID=5203&Inline=True",  # noqa
-            "title": "Minutes",
+            "href": "https://grandrapidscity.primegov.com/Public/CompiledDocument?meetingTemplateId=30219&compileOutputType=1",  # noqa
+            "title": "Official Proceedings",
         },
     ]
 
 
-def test_classification():
-    assert parsed_items[0]["classification"] == NOT_CLASSIFIED
-
-
-@pytest.mark.parametrize("item", parsed_items)
-def test_all_day(item):
-    assert item["all_day"] is False
+def test_classification(commission_items):
+    assert commission_items[0]["classification"] == COMMISSION

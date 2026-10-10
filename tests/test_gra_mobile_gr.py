@@ -6,101 +6,88 @@ from city_scrapers_core.constants import COMMISSION
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.gra_mobile_gr import GraMobileGrSpider
+from city_scrapers.spiders.gra_city import GraMobileGrSpider
 
-test_response = file_response(
+html_response = file_response(
     join(dirname(__file__), "files", "gra_mobile_gr.html"),
-    url="http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx",
+    url="https://events.grandrapidsmi.gov/meetings/Index?action=search&StartDate=09/24/24&EndDate=03/24/27&Keywords=Mobile-GR-Commission",  # noqa
 )
-spider = GraMobileGrSpider()
 
-freezer = freeze_time("2023-08-12")
-freezer.start()
-
-parsed_items = [item for item in spider.parse(test_response)]
-
-freezer.stop()
+attachments_response = file_response(
+    join(dirname(__file__), "files", "gra_mobile_gr.json"),
+    url="https://grandrapidscity.primegov.com/api/v2/PublicPortal/ListArchivedMeetingsByCommitteeId?year=2026&committeeId=15",  # noqa
+)
 
 
-"""
-Uncomment below
-def test_tests():
-    print("Please write some tests for this spider or at least disable this one.")
-    assert False
-"""
+@pytest.fixture
+def commission_items():
+    spider = GraMobileGrSpider()
+    spider.attachments = attachments_response.json()
+    with freeze_time("2026-09-24"):
+        return [item for item in spider._parse_events(html_response)]
 
 
-def test_title():
-    assert parsed_items[0]["title"] == "Mobile GR Commission"
+def test_count(commission_items):
+    assert len(commission_items) == 12
 
 
-def test_description():
-    assert parsed_items[0]["description"] == ""
+def test_title(commission_items):
+    assert commission_items[0]["title"] == "Mobile GR Commission Meeting"
 
 
-def test_start():
-    assert parsed_items[0]["start"] == datetime(2023, 2, 2, 12, 0)
+def test_description(commission_items):
+    assert commission_items[0]["description"] == ""
 
 
-# def test_end():
-#     assert parsed_items[0]["end"] == datetime(2019, 1, 1, 0, 0)
+def test_start(commission_items):
+    assert commission_items[0]["start"] == datetime(2025, 2, 6, 12, 0)
 
 
-def test_time_notes():
-    assert parsed_items[0]["time_notes"] == ""
+def test_end(commission_items):
+    assert commission_items[0]["end"] is None
 
 
-def test_id():
-    assert parsed_items[0]["id"] == "gra_mobile_gr/202302021200/x/mobile_gr_commission"
+def test_time_notes(commission_items):
+    assert commission_items[0]["time_notes"] == ""
 
 
-def test_status():
-    assert parsed_items[0]["status"] == "passed"
-
-
-def test_location():
-    assert parsed_items[0]["location"] == {
-        "name": "",
-        "address": "Mobile GR and Parking Services Conference Room 50 Ottawa Ave. NW, Grand Rapids, MI  49503",  # noqa
-    }
-
-
-def test_source():
+def test_id(commission_items):
     assert (
-        parsed_items[0]["source"]
-        == "http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx"
+        commission_items[0]["id"]
+        == "gra_mobile_gr/202502061200/x/mobile_gr_commission_meeting"
     )
 
 
-def test_links():
-    assert parsed_items[0]["links"] == [
+def test_status(commission_items):
+    assert commission_items[0]["status"] == "passed"
+
+
+def test_location(commission_items):
+    assert commission_items[0]["location"] == {
+        "name": "City of Grand Rapids - City Hall",
+        "address": "300 Monroe Ave NW, Grand Rapids, MI 49503",
+    }
+
+
+def test_source(commission_items):
+    assert (
+        commission_items[0]["source"]
+        == "https://events.grandrapidsmi.gov/meetings/Detail/2025-02-06-1200-Mobile-GR-Commission-Meeting"  # noqa
+    )
+
+
+def test_links(commission_items):
+    assert commission_items[0]["links"] == [
         {
-            "href": "http://grandrapidscitymi.iqm2.com//Citizens/Detail_Meeting.aspx?ID=6975",  # noqa
-            "title": "Meeting Page",
+            "href": "https://www.grandrapidsmi.gov/government/public-notices/",
+            "title": "Meeting cancellations and other public notices can be found on this page",  # noqa
         },
         {
-            "href": "http://grandrapidscitymi.iqm2.com//Citizens/Detail_Meeting.aspx?ID=6975",  # noqa
-            "title": "Agenda",
-        },
-        {
-            "href": "http://grandrapidscitymi.iqm2.com/Citizens/FileOpen.aspx?Type=1&ID=5166&Inline=True",  # noqa
-            "title": "Agenda Packet",
-        },
-        {
-            "href": "http://grandrapidscitymi.iqm2.com/Citizens/FileOpen.aspx?Type=15&ID=5240&Inline=True",  # noqa
-            "title": "Summary",
-        },
-        {
-            "href": "http://grandrapidscitymi.iqm2.com/Citizens/FileOpen.aspx?Type=12&ID=5240&Inline=True",  # noqa
-            "title": "Minutes",
+            "href": "https://www.youtube.com/@TheCityofGrandRapids",
+            "title": "YouTube channel",
         },
     ]
 
 
-def test_classification():
-    assert parsed_items[0]["classification"] == COMMISSION
-
-
-@pytest.mark.parametrize("item", parsed_items)
-def test_all_day(item):
-    assert item["all_day"] is False
+def test_classification(commission_items):
+    assert commission_items[0]["classification"] == COMMISSION
