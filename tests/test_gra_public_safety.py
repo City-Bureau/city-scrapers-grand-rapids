@@ -6,98 +6,100 @@ from city_scrapers_core.constants import COMMITTEE
 from city_scrapers_core.utils import file_response
 from freezegun import freeze_time
 
-from city_scrapers.spiders.gra_public_safety import GraPublicSafetySpider
+from city_scrapers.spiders.gra_city import GraPublicSafetySpider
 
-test_response = file_response(
+html_response = file_response(
     join(dirname(__file__), "files", "gra_public_safety.html"),
-    url="http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx",
+    url="https://events.grandrapidsmi.gov/meetings/Index?action=search&StartDate=09/24/24&EndDate=03/24/27&Keywords=Public-Safety-Committee",  # noqa
 )
-spider = GraPublicSafetySpider()
 
-freezer = freeze_time("2023-08-12")
-freezer.start()
-
-parsed_items = [item for item in spider.parse(test_response)]
-
-freezer.stop()
+attachments_response = file_response(
+    join(dirname(__file__), "files", "gra_public_safety.json"),
+    url="https://grandrapidscity.primegov.com/api/v2/PublicPortal/ListArchivedMeetingsByCommitteeId?year=2026&committeeId=1",  # noqa
+)
 
 
-"""
-Uncomment below
-def test_tests():
-    print("Please write some tests for this spider or at least disable this one.")
-    assert False
-"""
+@pytest.fixture
+def committee_items():
+    spider = GraPublicSafetySpider()
+    spider.attachments = attachments_response.json()
+    with freeze_time("2026-09-24"):
+        return [item for item in spider._parse_events(html_response)]
 
 
-def test_title():
-    assert parsed_items[0]["title"] == "Public Safety Committee"
+def test_count(committee_items):
+    assert len(committee_items) == 11
 
 
-def test_description():
-    assert parsed_items[0]["description"] == ""
+def test_title(committee_items):
+    assert committee_items[0]["title"] == "Public Safety Committee"
 
 
-def test_start():
-    assert parsed_items[0]["start"] == datetime(2023, 2, 7, 12, 30)
+def test_description(committee_items):
+    assert committee_items[0]["description"] == ""
 
 
-# def test_end():
-#     assert parsed_items[0]["end"] == datetime(2019, 1, 1, 0, 0)
+def test_start(committee_items):
+    assert committee_items[0]["start"] == datetime(2026, 1, 27, 12, 30)
 
 
-def test_time_notes():
-    assert parsed_items[0]["time_notes"] == ""
+def test_end(committee_items):
+    assert committee_items[0]["end"] is None
 
 
-def test_id():
+def test_time_notes(committee_items):
+    assert committee_items[0]["time_notes"] == ""
+
+
+def test_id(committee_items):
     assert (
-        parsed_items[0]["id"]
-        == "gra_public_safety/202302071230/x/public_safety_committee"
+        committee_items[0]["id"]
+        == "gra_public_safety/202601271230/x/public_safety_committee"
     )
 
 
-def test_status():
-    assert parsed_items[0]["status"] == "passed"
+def test_status(committee_items):
+    assert committee_items[0]["status"] == "passed"
 
 
-def test_location():
-    assert parsed_items[0]["location"] == {
-        "name": "",
-        "address": "City Commission Chambers City Hall, 300 Monroe Ave NW, 9th Floor, Grand Rapids, MI  49503",  # noqa
+def test_location(committee_items):
+    assert committee_items[0]["location"] == {
+        "name": "City of Grand Rapids - City Hall",
+        "address": "300 Monroe Ave NW, Grand Rapids, MI 49503",
     }
 
 
-def test_source():
+def test_source(committee_items):
     assert (
-        parsed_items[0]["source"]
-        == "http://grandrapidscitymi.iqm2.com/Citizens/calendar.aspx"
+        committee_items[0]["source"]
+        == "https://events.grandrapidsmi.gov/meetings/Detail/2026-01-27-1230-Public-Safety-Committee"  # noqa
     )
 
 
-def test_links():
-    assert parsed_items[0]["links"] == [
+def test_links(committee_items):
+    assert committee_items[0]["links"] == [
         {
-            "href": "http://grandrapidscitymi.iqm2.com//Citizens/Detail_Meeting.aspx?ID=7298",  # noqa
-            "title": "Meeting Page",
+            "href": "https://www.grandrapidsmi.gov/government/public-notices/",
+            "title": "Meeting cancellations and other public notices can be found on this page",  # noqa
         },
         {
-            "href": "http://grandrapidscitymi.iqm2.com//Citizens/Detail_Meeting.aspx?ID=7298",  # noqa
+            "title": "YouTube channel",
+            "href": "https://www.youtube.com/@TheCityofGrandRapids",
+        },
+        {
+            "href": "https://grandrapidsmi.new.swagit.com/videos/373285",
+            "title": "Video",
+        },
+        {
+            "href": "https://grandrapidscity.primegov.com/Public/CompiledDocument?meetingTemplateId=31096&compileOutputType=1",  # noqa
             "title": "Agenda",
         },
         {
-            "href": "http://grandrapidscitymi.iqm2.com/Citizens/FileOpen.aspx?Type=1&ID=5167&Inline=True",  # noqa
-            "title": "Agenda Packet",
+            "href": "https://grandrapidscity.primegov.com/Public/CompiledDocument?meetingTemplateId=31098&compileOutputType=1",  # noqa
+            "title": "Packet",
         },
-        {"href": None, "title": "Summary"},
-        {"href": None, "title": "Minutes"},
     ]
 
 
-def test_classification():
-    assert parsed_items[0]["classification"] == COMMITTEE
-
-
-@pytest.mark.parametrize("item", parsed_items)
-def test_all_day(item):
-    assert item["all_day"] is False
+def test_classification(committee_items):
+    assert committee_items[0]["classification"] == COMMITTEE
