@@ -377,22 +377,6 @@ def test_packet_without_date():
     )
 
 
-@pytest.mark.parametrize(
-    "utc_now,expected",
-    [
-        # 3:30 p.m. in Grand Rapids (EST, UTC-5): server's UTC clock is past 4:00
-        ("2026-11-18 20:30", TENTATIVE),
-        # 4:30 p.m. in Grand Rapids
-        ("2026-11-18 21:30", PASSED),
-    ],
-)
-def test_status_uses_local_time(utc_now, expected):
-    with freeze_time(utc_now):
-        spider = _spider()
-        item = {"title": "Board of Directors", "start": datetime(2026, 11, 18, 16)}
-        assert spider._get_status(item) == expected
-
-
 def test_cutoff_uses_local_date():
     # 11:30 p.m. Nov 17 in Grand Rapids is already Nov 18 in UTC
     with freeze_time("2026-11-18 04:30"):

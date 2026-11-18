@@ -649,17 +649,6 @@ class GraTheRapidBodSpider(CityScrapersSpider):
             )
         )
 
-    def _get_status(self, item, text=""):
-        """
-        Like the core version, but compares the start time with the time in
-        Grand Rapids rather than the server's time, so a 4:00 p.m. meeting
-        isn't marked passed at noon.
-        """
-        status = super()._get_status(item, text)
-        if status == CANCELLED:
-            return status
-        return PASSED if item["start"] < self._now() else TENTATIVE
-
     def _report_error(self, exc):
         """Log and send spider_error (forwarded to Sentry)."""
         self.logger.error(str(exc))
