@@ -35,14 +35,7 @@ from io import BytesIO
 from zoneinfo import ZoneInfo
 
 import scrapy
-from city_scrapers_core.constants import (
-    ADVISORY_COMMITTEE,
-    BOARD,
-    CANCELLED,
-    COMMITTEE,
-    PASSED,
-    TENTATIVE,
-)
+from city_scrapers_core.constants import ADVISORY_COMMITTEE, BOARD, COMMITTEE
 from city_scrapers_core.items import Meeting
 from city_scrapers_core.spiders import CityScrapersSpider
 from dateutil.relativedelta import relativedelta
