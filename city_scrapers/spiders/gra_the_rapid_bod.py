@@ -35,7 +35,14 @@ from io import BytesIO
 from zoneinfo import ZoneInfo
 
 import scrapy
-from city_scrapers_core.constants import ADVISORY_COMMITTEE, BOARD, COMMITTEE
+from city_scrapers_core.constants import (
+    ADVISORY_COMMITTEE,
+    BOARD,
+    CANCELLED,
+    COMMITTEE,
+    PASSED,
+    TENTATIVE,
+)
 from city_scrapers_core.items import Meeting
 from city_scrapers_core.spiders import CityScrapersSpider
 from dateutil.relativedelta import relativedelta
@@ -159,6 +166,7 @@ class GraTheRapidBodSpider(CityScrapersSpider):
         self._canceled = []
         self._board_dates = []
         self._pending = 0
+        self._completed = set()
         self._packets_requested = 0
         self._meetings_parsed = 0
 
@@ -189,16 +197,19 @@ class GraTheRapidBodSpider(CityScrapersSpider):
             response
         )
 
+        packets = [e for e in entries if not e["canceled"]]
+        self._canceled = [
+            e
+            for e in entries
+            if e["canceled"] and self._in_window(e["year"], e["month"])
+        ]
+        wanted = [e for e in packets if self._in_window(e["year"], e["month"])]
+        wanted += self._predecessor_packets(packets)
+
         seen = set()
         requests = []
-        for entry in entries:
-            if entry["canceled"]:
-                if self._in_window(entry["year"], entry["month"]):
-                    self._canceled.append(entry)
-                continue
-            if entry["url"] in seen or not self._in_window(
-                entry["year"], entry["month"]
-            ):
+        for entry in wanted:
+            if entry["url"] in seen:
                 continue
             seen.add(entry["url"])
             requests.append(
@@ -216,6 +227,25 @@ class GraTheRapidBodSpider(CityScrapersSpider):
             yield from self._parse_meetings()
             return
         yield from requests
+
+    def _predecessor_packets(self, packets):
+        """
+        The packet before each canceled month, whose "Next meeting" date gives
+        the canceled meeting's day. It can be older than the lookback window
+        (the November 2024 packet dates a canceled January 2025 meeting);
+        its own meeting is still dropped by the cutoff in _parse_meetings.
+        """
+        predecessors = []
+        for canceled in self._canceled:
+            month = (canceled["year"], canceled["month"])
+            earlier = [
+                p
+                for p in packets
+                if p["body"] == canceled["body"] and (p["year"], p["month"]) < month
+            ]
+            if earlier:
+                predecessors.append(max(earlier, key=lambda p: (p["year"], p["month"])))
+        return predecessors
 
     def _in_window(self, year, month):
         """Whether a month can hold meetings on or after the cutoff date."""
@@ -373,21 +403,30 @@ class GraTheRapidBodSpider(CityScrapersSpider):
         return entries
 
     def _parse_packet(self, response, entry):
+        """
+        Exceptions raised in a callback don't reach the errback, so a packet
+        that can't be read or parsed is skipped here; otherwise _pending would
+        never reach 0 and no meetings would be yielded.
+        """
         try:
             text = self._pdf_first_page_text(response.body)
+            packet = self._parse_packet_text(text, entry)
         except Exception as e:
-            self.logger.warning(f"Could not read packet PDF {response.url}: {e!r}")
-            text = ""
-        packet = self._parse_packet_text(text, entry)
+            self.logger.warning(f"Could not read packet {entry['url']}: {e!r}")
+            packet = None
         if packet:
             self._packets.append(packet)
-        yield from self._packet_done()
+        yield from self._packet_done(entry["url"])
 
     def _packet_failed(self, failure):
         self._request_failed(failure)
-        yield from self._packet_done()
+        yield from self._packet_done(failure.request.url)
 
-    def _packet_done(self):
+    def _packet_done(self, url):
+        """Count each packet once, so meetings are yielded after the last one."""
+        if url in self._completed:
+            return
+        self._completed.add(url)
         self._pending -= 1
         if self._pending == 0:
             yield from self._parse_meetings()
@@ -430,10 +469,17 @@ class GraTheRapidBodSpider(CityScrapersSpider):
                 f"{entry['year']} from the link text"
             )
 
-        hour = int(match.group("hour")) % 12
+        hour = int(match.group("hour"))
+        minute = int(match.group("minute") or 0)
+        if not 1 <= hour <= 12 or minute > 59:
+            self.logger.warning(
+                f"Invalid meeting time {line!r} in packet {entry['url']}"
+            )
+            return None
+        hour %= 12
         if match.group("ampm").lower() == "p":
             hour += 12
-        start_time = time(hour, int(match.group("minute") or 0))
+        start_time = time(hour, minute)
 
         title_lines = []
         for previous in reversed(lines[max(0, index - 3) : index]):

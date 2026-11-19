@@ -381,3 +381,66 @@ def test_cutoff_uses_local_date():
     # 11:30 p.m. Nov 17 in Grand Rapids is already Nov 18 in UTC
     with freeze_time("2026-11-18 04:30"):
         assert _spider().cutoff_date == datetime(2024, 11, 17).date()
+
+
+def test_predecessor_packet_dates_cancellation():
+    # On Dec 1, 2026 the November 2024 packets are before the window, but the
+    # Planning & Technology one dates the canceled January 2025 meeting
+    with freeze_time("2026-12-01 17:00"):
+        spider = _spider()
+        requests, meetings = _crawl(spider)
+    urls = [r.url for r in requests]
+    assert FILES_URL + "2025-07/pt-nov-4-final-packet.pdf" in urls
+    # Not needed for any cancellation
+    assert FILES_URL + "2025-07/nov-6-finance-final-packet.pdf" not in urls
+    assert FILES_URL + "2025-07/nov-12-pps-final-packet.pdf" not in urls
+    item = _find(meetings, "2025-01-06 08:30")
+    assert item["status"] == CANCELLED
+    assert item["title"] == "Future Planning & Innovation Committee"
+    assert min(m["start"] for m in meetings) == datetime(2024, 12, 4, 16, 0)
+    assert not [
+        m for m in meetings if m["start"].year == 2024 and m["start"].month == 11
+    ]
+
+
+SEP_2026_PACKET = FILES_URL + "2026-09/BOD%20Meeting%20Packet%209-23-2026.pdf"
+
+
+@pytest.mark.parametrize("bad_time", ["4:60 p.m.", "13:00 p.m."])
+def test_invalid_packet_time_skipped(bad_time):
+    texts = dict(PACKET_TEXTS)
+    texts[SEP_2026_PACKET] = texts[SEP_2026_PACKET].replace("4:00 p.m.", bad_time)
+    with freeze_time(FREEZE_DATE):
+        spider = _spider()
+        _, meetings = _crawl(spider, texts=texts)
+    assert len(meetings) == 49
+    # The date list still gives the meeting, without the packet
+    assert _find(meetings, "2026-09-23 16:00")["links"] == []
+
+
+def test_packet_parse_error_skipped():
+    with freeze_time(FREEZE_DATE):
+        spider = _spider()
+        parse_text = spider._parse_packet_text
+
+        def failing_parse(text, entry):
+            if entry["url"] == SEP_2026_PACKET:
+                raise RuntimeError("unexpected")
+            return parse_text(text, entry)
+
+        spider._parse_packet_text = failing_parse
+        _, meetings = _crawl(spider)
+    assert len(meetings) == 49
+    assert _find(meetings, "2026-09-23 16:00")["links"] == []
+
+
+def test_packet_counted_once():
+    with freeze_time(FREEZE_DATE):
+        spider = _spider()
+        spider._pdf_first_page_text = lambda body: PACKET_TEXTS[body.decode()]
+        requests = list(spider.parse(_page_response()))
+        first = requests[0]
+        response = Response(url=first.url, body=first.url.encode())
+        for _ in range(2):
+            list(first.callback(response, **first.cb_kwargs))
+        assert spider._pending == len(requests) - 1
